@@ -30,7 +30,7 @@
 struct Curl_asn1Element;
 
 #if defined(USE_GNUTLS) || defined(USE_WOLFSSL) || defined(USE_SCHANNEL) || \
-  defined(USE_MBEDTLS) || defined(USE_RUSTLS)
+  defined(USE_MBEDTLS) || defined(USE_RUSTLS) || defined(USE_LIBNX)
 
 #include "cfilters.h"
 #include "urldata.h"

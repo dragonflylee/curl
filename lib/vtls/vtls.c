@@ -54,6 +54,7 @@
 #include "vtls/schannel.h"       /* Schannel SSPI version */
 #include "vtls/mbedtls.h"        /* mbedTLS versions */
 #include "vtls/rustls.h"         /* Rustls versions */
+#include "vtls/libnx.h"          /* libnx versions */
 
 #include "slist.h"
 #include "curl_trc.h"
@@ -699,6 +700,8 @@ const struct Curl_ssl *Curl_ssl =
   &Curl_ssl_openssl;
 #elif defined(USE_SCHANNEL)
   &Curl_ssl_schannel;
+#elif defined(USE_LIBNX)
+  &Curl_ssl_libnx;
 #else
 #error "Missing struct Curl_ssl for selected SSL backend"
 #endif
@@ -721,6 +724,9 @@ static const struct Curl_ssl *available_backends[] = {
 #endif
 #ifdef USE_RUSTLS
   &Curl_ssl_rustls,
+#endif
+#ifdef USE_LIBNX
+  &Curl_ssl_libnx,
 #endif
   NULL
 };

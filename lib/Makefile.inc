@@ -110,6 +110,7 @@ LIB_VTLS_CFILES =           \
   vtls/gtls.c               \
   vtls/hostcheck.c          \
   vtls/keylog.c             \
+  vtls/libnx.c              \
   vtls/mbedtls.c            \
   vtls/openssl.c            \
   vtls/rustls.c             \
@@ -128,6 +129,7 @@ LIB_VTLS_HFILES =           \
   vtls/gtls.h               \
   vtls/hostcheck.h          \
   vtls/keylog.h             \
+  vtls/libnx.h              \
   vtls/mbedtls.h            \
   vtls/openssl.h            \
   vtls/rustls.h             \
