@@ -43,6 +43,7 @@ LIB_VAUTH_HFILES =      \
   vauth/vauth.h
 
 LIB_VTLS_CFILES =           \
+  vtls/libnx.c              \
   vtls/bearssl.c            \
   vtls/gtls.c               \
   vtls/hostcheck.c          \
@@ -59,6 +60,7 @@ LIB_VTLS_CFILES =           \
   vtls/x509asn1.c
 
 LIB_VTLS_HFILES =           \
+  vtls/libnx.h              \
   vtls/bearssl.h            \
   vtls/gtls.h               \
   vtls/hostcheck.h          \

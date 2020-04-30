@@ -202,6 +202,7 @@ CURLcode Curl_ssl_addsessionid(struct Curl_cfilter *cf,
 #include "mbedtls.h"        /* mbedTLS versions */
 #include "bearssl.h"        /* BearSSL versions */
 #include "rustls.h"         /* rustls versions */
+#include "libnx.h"          /* libnx versions */
 
 #endif /* USE_SSL */
 
