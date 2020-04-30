@@ -156,7 +156,8 @@ typedef enum {
   CURLSSLBACKEND_MBEDTLS = 11,
   CURLSSLBACKEND_MESALINK = 12,
   CURLSSLBACKEND_BEARSSL = 13,
-  CURLSSLBACKEND_RUSTLS = 14
+  CURLSSLBACKEND_RUSTLS = 14,
+  CURLSSLBACKEND_LIBNX = 15
 } curl_sslbackend;
 
 /* aliases for library clones and renames */

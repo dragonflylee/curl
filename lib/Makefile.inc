@@ -41,6 +41,7 @@ LIB_VAUTH_HFILES =      \
   vauth/vauth.h
 
 LIB_VTLS_CFILES =           \
+  vtls/libnx.c              \
   vtls/bearssl.c            \
   vtls/gskit.c              \
   vtls/gtls.c               \
@@ -58,6 +59,7 @@ LIB_VTLS_CFILES =           \
   vtls/wolfssl.c
 
 LIB_VTLS_HFILES =           \
+  vtls/libnx.h              \
   vtls/bearssl.h            \
   vtls/gskit.h              \
   vtls/gtls.h               \
