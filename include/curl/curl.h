@@ -93,7 +93,8 @@
     defined(__CYGWIN__) || defined(AMIGA) || defined(__NuttX__) || \
    (defined(__FreeBSD_version) && (__FreeBSD_version < 800000)) || \
    (defined(__MidnightBSD_version) && (__MidnightBSD_version < 100000)) || \
-    defined(__sun__) || defined(__serenity__) || defined(__vxworks__)
+    defined(__sun__) || defined(__serenity__) || defined(__vxworks__) || \
+    defined(__SWITCH__)
 #include <sys/select.h>
 #endif
 
@@ -163,7 +164,8 @@ typedef enum {
   CURLSSLBACKEND_MBEDTLS = 11,
   CURLSSLBACKEND_MESALINK               CURL_DEPRECATED(7.82.0, "") = 12,
   CURLSSLBACKEND_BEARSSL                CURL_DEPRECATED(8.15.0, "") = 13,
-  CURLSSLBACKEND_RUSTLS = 14
+  CURLSSLBACKEND_RUSTLS = 14,
+  CURLSSLBACKEND_LIBNX = 15
 } curl_sslbackend;
 
 /* aliases for library clones and renames */
