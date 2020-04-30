@@ -731,7 +731,7 @@
 
 #if defined(USE_GNUTLS) || defined(USE_OPENSSL) || defined(USE_MBEDTLS) || \
   defined(USE_WOLFSSL) || defined(USE_SCHANNEL) || \
-  defined(USE_RUSTLS)
+  defined(USE_RUSTLS) || defined(USE_LIBNX)
 #define USE_SSL    /* SSL support has been enabled */
 #endif
 
