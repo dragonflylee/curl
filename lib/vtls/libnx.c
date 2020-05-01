@@ -50,6 +50,8 @@
 #include "curl_memory.h"
 #include "memdebug.h"
 
+#include <dirent.h>
+
 struct libnx_ssl_backend_data {
   SslContext context;
   SslConnection conn;
@@ -74,6 +76,102 @@ struct libnx_ssl_backend_data {
 #define PUB_DER_MAX_BYTES   (RSA_PUB_DER_MAX_BYTES > ECP_PUB_DER_MAX_BYTES ? \
                              RSA_PUB_DER_MAX_BYTES : ECP_PUB_DER_MAX_BYTES)
 */
+
+static bool load_file(const char *path, void** buffer, size_t *size) {
+    struct stat filestat;
+    size_t tmp=0;
+    *buffer = NULL;
+    *size = 0;
+    if (stat(path, &filestat)==-1) return FALSE;
+
+    FILE *f = fopen(path, "rb");
+    if(!f) return FALSE;
+
+    *size = filestat.st_size;
+    *buffer = calloc(1, *size);
+
+    if(*buffer)
+      tmp = fread(*buffer, 1, *size, f);
+    fclose(f);
+
+    if(!*buffer) return FALSE;
+
+    if(tmp!=*size) {
+        free(*buffer);
+        *buffer = NULL;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static CURLcode load_capath(struct Curl_easy *data, SslContext *context, const char *path, const bool verifypeer) {
+  Result rc = 0;
+  void* tmpbuf = NULL;
+  size_t tmpbuf_size = 0;
+  DIR* dir;
+  struct dirent* dp;
+  char tmp_path[PATH_MAX];
+
+  dir = opendir(path);
+  if(!dir) {
+    failf(data, "Error opening ca path %s",
+          path);
+
+    if(verifypeer)
+      return CURLE_SSL_CACERT_BADFILE;
+
+    return CURLE_OK;
+  }
+
+  while ((dp = readdir(dir))) {
+    if (dp->d_name[0]=='.')
+      continue;
+
+    curl_msnprintf(tmp_path, sizeof(tmp_path), "%s/%s", path, dp->d_name);
+
+    bool entrytype = FALSE;
+
+    #ifdef _DIRENT_HAVE_D_TYPE
+    if (dp->d_type == DT_UNKNOWN)
+      continue;
+    entrytype = dp->d_type != DT_REG;
+    #else
+    struct stat tmpstat;
+
+    if(stat(tmp_path, &tmpstat)==-1)
+      continue;
+
+    entrytype = (tmpstat.st_mode & S_IFMT) != S_IFREG;
+    #endif
+
+    if(entrytype) /* Ignore directories. */
+      continue;
+
+    if(!load_file(tmp_path, &tmpbuf, &tmpbuf_size)) {
+      failf(data, "Error reading ca path file %s",
+            tmp_path);
+
+      if(verifypeer)
+        return CURLE_SSL_CACERT_BADFILE;
+    }
+
+    rc = sslContextImportServerPki(context, tmpbuf, tmpbuf_size, SslCertificateFormat_Pem, NULL);
+    free(tmpbuf);
+
+    if(R_FAILED(rc)) {
+      failf(data, "Error importing ca path file %s - libnx: 0x%X",
+            tmp_path, rc);
+
+      if(verifypeer)
+        return CURLE_SSL_CACERT_BADFILE;
+    }
+  }
+
+  closedir(dir);
+
+  return CURLE_OK;
+}
 
 static CURLcode libnx_version_from_curl(u32 *outver, long version)
 {
@@ -156,13 +254,14 @@ libnx_connect_step1(struct Curl_cfilter *cf,
   const bool verifypeer = conn_config->verifypeer;
   const char * const ssl_capath = conn_config->CApath;
   char * const ssl_cert = ssl_config->primary.clientcert;
+  char * const key_passwd = ssl_config->key_passwd;
   const char * const ssl_crlfile = ssl_config->primary.CRLfile;
   const char *hostname = connssl->peer.hostname;
   const long int port = Curl_ssl_cf_is_proxy(cf) ? cf->conn->conn_to_port : cf->conn->remote_port;
   int ret = -1;
   Result rc=0;
-  char errorbuf[128];
-  errorbuf[0] = 0;
+  void* tmpbuf = NULL;
+  size_t tmpbuf_size=0;
 
   /* ssl-service only supports TLS 1.0-1.2 */
   if((conn_config->version == CURL_SSLVERSION_SSLv2) ||
@@ -203,11 +302,112 @@ libnx_connect_step1(struct Curl_cfilter *cf,
     }
   }
   else { /* Only setup the context if the application didn't. */
-    rc = sslContextRegisterInternalPki(&BACKEND->context, SslInternalPki_DeviceClientCertDefault, NULL);
-    if(R_FAILED(rc)) return CURLE_SSL_CONNECT_ERROR;
+    /* Load the trusted CA */
+    if(ssl_cafile) {
+      if(!load_file(ssl_cafile, &tmpbuf, &tmpbuf_size)) {
+        failf(data, "Error reading ca cert file %s",
+              ssl_cafile);
 
-    /* TODO: Impl the rest of the cert loading, and only use sslContextRegisterInternalPki if nothing else was specified. */
+        if(verifypeer)
+          return CURLE_SSL_CACERT_BADFILE;
+      }
+      else {
+        rc = sslContextImportServerPki(&BACKEND->context, tmpbuf, tmpbuf_size, SslCertificateFormat_Pem, NULL);
+        free(tmpbuf);
+
+        if(R_FAILED(rc)) {
+          failf(data, "Error importing ca cert file %s - libnx: 0x%X",
+                ssl_cafile, rc);
+
+          if(verifypeer)
+            return CURLE_SSL_CACERT_BADFILE;
+        }
+      }
+    }
+
+    if(ssl_capath) {
+      CURLcode retcode = load_capath(data, &BACKEND->context, ssl_capath, verifypeer);
+
+      if(retcode) return retcode;
+    }
+
+    /* Load the CRL */
+    /* The required ssl-service input for this is unknown. */
+    /* Therefore, the below is disabled. */
+    /*
+    if(ssl_crlfile) {
+      if(!load_file(ssl_crlfile, &tmpbuf, &tmpbuf_size)) {
+        failf(data, "Error reading CRL file %s",
+              ssl_cert);
+
+        return CURLE_SSL_CRL_BADFILE;
+      }
+
+      rc = sslContextImportCrl(&BACKEND->context, tmpbuf, tmpbuf_size, NULL);
+      free(tmpbuf);
+
+      if(R_FAILED(rc)) {
+        failf(data, "Error importing CRL file %s - libnx: 0x%X",
+              ssl_crlfile, rc);
+
+        return CURLE_SSL_CRL_BADFILE;
+      }
+    }*/
+
+    /* Load the client certificate */
+    if(ssl_cert) {
+      if(!ssl_config->cert_type)
+        infof(data, "WARNING: SSL: Certificate type not set, assuming "
+                    "PKCS#12 format.\n");
+        else if(strncmp(ssl_config->cert_type, "P12",
+          strlen(ssl_config->cert_type)) != 0)
+          infof(data, "WARNING: SSL: The ssl-service only supports "
+                      "loading identities that are in PKCS#12 format.\n");
+
+      if(!load_file(ssl_cert, &tmpbuf, &tmpbuf_size)) {
+        failf(data, "Error reading client cert file %s",
+              ssl_cert);
+
+        return CURLE_SSL_CERTPROBLEM;
+      }
+
+      rc = sslContextImportClientPki(&BACKEND->context, tmpbuf, tmpbuf_size, key_passwd, key_passwd ? strlen(key_passwd) : 0, NULL);
+      free(tmpbuf);
+
+      if(R_FAILED(rc)) {
+        failf(data, "Error importing client PKCS#12 file %s - libnx: 0x%X",
+              ssl_cert, rc);
+
+        return CURLE_SSL_CERTPROBLEM;
+      }
+    }
+
+    if(!ssl_cafile && !ssl_capath && !ssl_cert) {
+      rc = sslContextRegisterInternalPki(&BACKEND->context, SslInternalPki_DeviceClientCertDefault, NULL);
+      if(R_FAILED(rc)) return CURLE_SSL_CONNECT_ERROR;
+    }
   }
+
+/*#ifdef HAS_ALPN
+  if(conn->bits.tls_enable_alpn) {
+    const char **p = &BACKEND->protocols[0];
+#ifdef USE_NGHTTP2
+    if(data->set.httpversion >= CURL_HTTP_VERSION_2)
+      *p++ = NGHTTP2_PROTO_VERSION_ID;
+#endif
+    *p++ = ALPN_HTTP_1_1;
+    *p = NULL;*/
+    /* this function doesn't clone the protocols array, which is why we need
+       to keep it around */
+    /*if(mbedtls_ssl_conf_alpn_protocols(&BACKEND->config,
+                                       &BACKEND->protocols[0])) {
+      failf(data, "Failed setting ALPN protocols");
+      return CURLE_SSL_CONNECT_ERROR;
+    }
+    for(p = &BACKEND->protocols[0]; *p; ++p)
+      infof(data, "ALPN, offering %s\n", *p);
+  }
+#endif*/
 
   rc = sslContextCreateConnection(&BACKEND->context, &BACKEND->conn);
 
@@ -241,6 +441,8 @@ libnx_connect_step1(struct Curl_cfilter *cf,
 
   if (R_FAILED(rc))
     return CURLE_SSL_CONNECT_ERROR;
+
+  infof(data, "libnx: Connecting to %s:%ld\n", hostname, port);
 
   connssl->connecting_state = ssl_connect_2;
 
@@ -472,6 +674,7 @@ static void *Curl_libnx_get_internals(struct ssl_connect_data *connssl,
 const struct Curl_ssl Curl_ssl_libnx = {
   { CURLSSLBACKEND_LIBNX, "libnx" }, /* info */
 
+  SSLSUPP_CA_PATH |
   SSLSUPP_PINNEDPUBKEY |
   SSLSUPP_SSL_CTX |
   SSLSUPP_TLS13_CIPHERSUITES,
