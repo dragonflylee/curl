@@ -28,7 +28,7 @@
 #include "curl_setup.h"
 
 #if defined(USE_GNUTLS) || defined(USE_WOLFSSL) || \
-  defined(USE_SCHANNEL) || defined(USE_SECTRANSP)
+  defined(USE_SCHANNEL) || defined(USE_SECTRANSP) || defined(USE_LIBNX)
 
 #include "cfilters.h"
 #include "urldata.h"

@@ -41,6 +41,7 @@
 #include "connect.h" /* for the connect timeout */
 #include "select.h"
 #include "multiif.h"
+#include "x509asn1.h"
 
 #undef BIT
 #include <switch.h>
@@ -55,6 +56,8 @@
 struct libnx_ssl_backend_data {
   SslContext context;
   SslConnection conn;
+  u8 *certbuf;
+  size_t certbuf_size;
 };
 
 #define BACKEND ((struct libnx_ssl_backend_data *)connssl->backend)
@@ -65,17 +68,6 @@ struct libnx_ssl_backend_data {
 #  define HAS_ALPN
 #endif
 
-
-/* See https://tls.mbed.org/discussions/generic/
-   howto-determine-exact-buffer-len-for-mbedtls_pk_write_pubkey_der
-*/
-/*
-#define RSA_PUB_DER_MAX_BYTES   (38 + 2 * MBEDTLS_MPI_MAX_SIZE)
-#define ECP_PUB_DER_MAX_BYTES   (30 + 2 * MBEDTLS_ECP_MAX_BYTES)
-
-#define PUB_DER_MAX_BYTES   (RSA_PUB_DER_MAX_BYTES > ECP_PUB_DER_MAX_BYTES ? \
-                             RSA_PUB_DER_MAX_BYTES : ECP_PUB_DER_MAX_BYTES)
-*/
 
 static bool load_file(const char *path, void** buffer, size_t *size) {
     struct stat filestat;
@@ -426,6 +418,9 @@ libnx_connect_step1(struct Curl_cfilter *cf,
   if(R_SUCCEEDED(rc))
     sslConnectionSetOption(&BACKEND->conn, SslOptionType_SkipDefaultVerify, TRUE);
 
+  if(R_SUCCEEDED(rc) && hosversionAtLeast(3,0,0))
+    rc = sslConnectionSetOption(&BACKEND->conn, SslOptionType_GetServerCertChain, TRUE);
+
   if(R_SUCCEEDED(rc)) {
     u32 verifyopt = SslVerifyOption_DateCheck;
     if(verifypeer) verifyopt |= SslVerifyOption_PeerCa;
@@ -454,16 +449,123 @@ libnx_connect_step2(struct Curl_cfilter *cf,
                     struct Curl_easy *data)
 {
   Result rc=0;
+  CURLcode retcode = CURLE_OK;
   struct ssl_connect_data *connssl = cf->ctx;
+  struct ssl_primary_config *conn_config = Curl_ssl_cf_get_primary_config(cf);
+  const char * const pinnedpubkey = Curl_ssl_cf_is_proxy(cf) ?
+        data->set.str[STRING_SSL_PINNEDPUBLICKEY_PROXY] :
+        data->set.str[STRING_SSL_PINNEDPUBLICKEY];
+  const size_t bufsize = 16384;
+  u8 *buffer = calloc(1, bufsize);
+  u8 *peercert = NULL;
+  u32 peercert_size = 0;
+  u8 zeros[4]={0};
+
+  if(!BACKEND->certbuf) {
+    BACKEND->certbuf_size = bufsize;
+    BACKEND->certbuf = (u8*)calloc(1, BACKEND->certbuf_size);
+  }
+
+  if(!buffer || !BACKEND->certbuf) {
+    free(buffer);
+    free(BACKEND->certbuf);
+    return CURLE_OUT_OF_MEMORY;
+  }
 
   u32 out_size=0, total_certs=0;
-  rc = sslConnectionDoHandshake(&BACKEND->conn, &out_size, &total_certs, NULL, 0); /* TODO: server_certbuf */
+  rc = sslConnectionDoHandshake(&BACKEND->conn, &out_size, &total_certs, buffer, bufsize);
+
+  if(memcmp(buffer, zeros, sizeof(zeros))) {
+    memcpy(BACKEND->certbuf, buffer, bufsize);
+  }
+  free(buffer);
+
   if(R_FAILED(rc)) {
       if(R_VALUE(rc) == MAKERESULT(123, 204)) /* PR_WOULD_BLOCK_ERROR */
         return CURLE_AGAIN;
 
       return R_VALUE(rc) == MAKERESULT(123, 207) ? CURLE_PEER_FAILED_VERIFICATION : CURLE_SSL_CONNECT_ERROR;
   }
+
+  if(out_size && total_certs) {
+    if(data->set.ssl.certinfo) retcode = Curl_ssl_init_certinfo(data, (int)total_certs);
+    if(!retcode) {
+      if(hosversionBefore(3,0,0)) {
+        infof(data, "Dumping cert info:\n");
+        retcode = Curl_extract_certinfo(data, 0, BACKEND->certbuf, &BACKEND->certbuf[out_size]);
+        peercert = buffer;
+        peercert_size = out_size;
+      }
+      else {
+        for(u32 certi=0; certi<total_certs; certi++) {
+          void* certdata = NULL;
+          u32 certdata_size=0;
+
+          rc = sslConnectionGetServerCertDetail(BACKEND->certbuf, out_size, certi, &certdata, &certdata_size);
+          if(R_SUCCEEDED(rc)) {
+            if(!certi) {
+              infof(data, "Dumping cert info:\n");
+              peercert = certdata;
+              peercert_size = certdata_size;
+            }
+            retcode = Curl_extract_certinfo(data, (int)certi, certdata, &((u8*)certdata)[certdata_size]);
+          }
+
+          if(R_FAILED(rc) || retcode) break;
+          if(!data->set.ssl.certinfo) break;
+        }
+      }
+    }
+  }
+
+  if(R_FAILED(rc) || retcode)
+    failf(data, "Unable to dump certificate information.\n");
+
+  if(pinnedpubkey) {
+    struct Curl_X509certificate cert;
+    struct Curl_asn1Element *pubkey;
+
+    if(!peercert || !peercert_size) {
+      failf(data, "Failed due to missing peer certificate%s.", conn_config->verifypeer ? "" : ", CURLOPT_SSL_VERIFYPEER must be enabled");
+      return CURLE_SSL_PINNEDPUBKEYNOTMATCH;
+    }
+
+    retcode = Curl_parseX509(&cert, peercert, &peercert[peercert_size]);
+    if(!retcode) return retcode;
+
+    retcode = Curl_pin_peer_pubkey(data,
+                                  pinnedpubkey,
+                                  cert.subjectPublicKeyInfo.header,
+                                  (size_t)(cert.subjectPublicKeyInfo.end - cert.subjectPublicKeyInfo.header));
+    if(retcode) return retcode;
+  }
+
+/*#ifdef HAS_ALPN
+  if(conn->bits.tls_enable_alpn) {
+    const char *next_protocol = mbedtls_ssl_get_alpn_protocol(&BACKEND->ssl);
+
+    if(next_protocol) {
+      infof(data, "ALPN, server accepted to use %s\n", next_protocol);
+#ifdef USE_NGHTTP2
+      if(!strncmp(next_protocol, NGHTTP2_PROTO_VERSION_ID,
+                  NGHTTP2_PROTO_VERSION_ID_LEN) &&
+         !next_protocol[NGHTTP2_PROTO_VERSION_ID_LEN]) {
+        conn->negnpn = CURL_HTTP_VERSION_2;
+      }
+      else
+#endif
+        if(!strncmp(next_protocol, ALPN_HTTP_1_1, ALPN_HTTP_1_1_LENGTH) &&
+           !next_protocol[ALPN_HTTP_1_1_LENGTH]) {
+          conn->negnpn = CURL_HTTP_VERSION_1_1;
+        }
+    }
+    else {
+      infof(data, "ALPN, server did not agree to a protocol\n");
+    }
+    Curl_multiuse_state(conn, conn->negnpn == CURL_HTTP_VERSION_2 ?
+                        BUNDLE_MULTIPLEX : BUNDLE_NO_MULTIUSE);
+  }
+#endif*/
 
   connssl->connecting_state = ssl_connect_done;
   infof(data, "SSL connected\n");
@@ -495,6 +597,9 @@ static void Curl_libnx_close(struct Curl_cfilter *cf, struct Curl_easy *data)
   struct ssl_connect_data *connssl = cf->ctx;
   sslConnectionClose(&BACKEND->conn);
   sslContextClose(&BACKEND->context);
+  free(BACKEND->certbuf);
+  BACKEND->certbuf = NULL;
+  BACKEND->certbuf_size = 0;
 }
 
 static ssize_t libnx_recv(struct Curl_cfilter *cf, struct Curl_easy *data,
@@ -675,6 +780,7 @@ const struct Curl_ssl Curl_ssl_libnx = {
   { CURLSSLBACKEND_LIBNX, "libnx" }, /* info */
 
   SSLSUPP_CA_PATH |
+  SSLSUPP_CERTINFO |
   SSLSUPP_PINNEDPUBKEY |
   SSLSUPP_SSL_CTX |
   SSLSUPP_TLS13_CIPHERSUITES,
