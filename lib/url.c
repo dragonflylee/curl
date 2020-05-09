@@ -97,6 +97,7 @@ bool curl_win32_idn_to_ascii(const char *in, char **out);
 #include "urlapi-int.h"
 #include "system_win32.h"
 #include "hsts.h"
+#include "hos.h"
 
 /* And now for the protocols */
 #include "ftp.h"
@@ -2521,6 +2522,12 @@ static CURLcode create_conn_helper_init_proxy(struct Curl_easy *data,
   char *socksproxy = NULL;
   char *no_proxy = NULL;
   CURLcode result = CURLE_OK;
+
+  if(!data->set.str[STRING_PROXY]) {
+    result = Curl_os_get_system_proxy(conn);
+    if(result)
+      goto out;
+  }
 
   /*************************************************************
    * Extract the user and password from the authentication string

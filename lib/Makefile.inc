@@ -140,6 +140,7 @@ LIB_CFILES =         \
   gopher.c           \
   hash.c             \
   hmac.c             \
+  hos.c              \
   hostasyn.c         \
   hostcheck.c        \
   hostip.c           \
@@ -269,7 +270,7 @@ LIB_HFILES =         \
   getinfo.h          \
   gopher.h           \
   hash.h             \
-  hostcheck.h        \
+  hos.h              \
   hostip.h           \
   hsts.h             \
   http.h             \
