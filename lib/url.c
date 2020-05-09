@@ -88,6 +88,7 @@
 #include "getinfo.h"
 #include "urlapi-int.h"
 #include "system_win32.h"
+#include "hos.h"
 #include "hsts.h"
 #include "noproxy.h"
 #include "cfilters.h"
@@ -2390,6 +2391,15 @@ static CURLcode create_conn_helper_init_proxy(struct Curl_easy *data,
   char *no_proxy = NULL;
   CURLcode result = CURLE_OK;
   bool spacesep = FALSE;
+
+#ifdef USE_LIBNX
+  if(!data->set.str[STRING_PROXY]) {
+    result = Curl_os_get_system_proxy(data);
+    if(result)
+      goto out;
+    conn->bits.proxy_user_passwd = TRUE;
+  }
+#endif
 
   /*************************************************************
    * Extract the user and password from the authentication string

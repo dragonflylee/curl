@@ -161,6 +161,7 @@ LIB_CFILES =         \
   hash.c             \
   headers.c          \
   hmac.c             \
+  hos.c              \
   hostasyn.c         \
   hostip.c           \
   hostip4.c          \
@@ -307,6 +308,7 @@ LIB_HFILES =         \
   gopher.h           \
   hash.h             \
   headers.h          \
+  hos.h              \
   hostip.h           \
   hsts.h             \
   http.h             \
