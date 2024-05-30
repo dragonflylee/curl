@@ -28,7 +28,7 @@
 #include "curl_setup.h"
 
 #if defined(USE_GNUTLS) || defined(USE_WOLFSSL) || \
-  defined(USE_SCHANNEL) || defined(USE_SECTRANSP)
+  defined(USE_SCHANNEL) || defined(USE_SECTRANSP) || defined(USE_LIBNX)
 
 #include "cfilters.h"
 #include "urldata.h"
@@ -76,5 +76,5 @@ CURLcode Curl_extract_certinfo(struct Curl_easy *data, int certnum,
                                const char *beg, const char *end);
 CURLcode Curl_verifyhost(struct Curl_cfilter *cf, struct Curl_easy *data,
                          const char *beg, const char *end);
-#endif /* USE_GNUTLS or USE_WOLFSSL or USE_SCHANNEL or USE_SECTRANSP */
+#endif /* USE_GNUTLS or USE_WOLFSSL or USE_SCHANNEL or USE_SECTRANSP or USE_LIBNX */
 #endif /* HEADER_CURL_X509ASN1_H */

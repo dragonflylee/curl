@@ -46,7 +46,7 @@ int Curl_pipe(curl_socket_t socks[2]);
 #define wakeup_read      sread
 #define wakeup_close     sclose
 
-#if defined(USE_UNIX_SOCKETS) && defined(HAVE_SOCKETPAIR)
+#if (defined(USE_UNIX_SOCKETS) || defined(USE_LIBNX)) && defined(HAVE_SOCKETPAIR)
 #define SOCKETPAIR_FAMILY AF_UNIX
 #elif !defined(HAVE_SOCKETPAIR)
 #define SOCKETPAIR_FAMILY 0 /* not used */
