@@ -25,11 +25,11 @@
 
 #ifdef USE_LIBNX
 
-CURLcode Curl_os_get_system_proxy(struct connectdata *conn);
+CURLcode Curl_os_get_system_proxy(struct Curl_easy *data, struct connectdata *conn);
 
 #else
 
-#define Curl_os_get_system_proxy(x) 0
+#define Curl_os_get_system_proxy(x, y) 0
 
 #endif /* USE_LIBNX */
 

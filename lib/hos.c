@@ -38,9 +38,8 @@
 #include "curl_memory.h"
 #include "memdebug.h"
 
-CURLcode Curl_os_get_system_proxy(struct connectdata *conn)
+CURLcode Curl_os_get_system_proxy(struct Curl_easy *data, struct connectdata *conn)
 {
-  struct Curl_easy *data = conn->data;
   CURLcode result = CURLE_OK;
   Result rc = 0;
   NifmNetworkProfileData profile;

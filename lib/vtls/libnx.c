@@ -199,10 +199,9 @@ static CURLcode Curl_libnx_random(struct Curl_easy *data,
 }
 
 static CURLcode
-set_ssl_version_min_max(struct connectdata *conn, int sockindex,
+set_ssl_version_min_max(struct Curl_easy *data, struct connectdata *conn, int sockindex,
                         u32 *out_version)
 {
-  struct Curl_easy *data = conn->data;
   struct ssl_connect_data *connssl = &conn->ssl[sockindex];
   u32 libnx_ver_min = 0;
   u32 libnx_ver_max = 0;
@@ -246,16 +245,15 @@ set_ssl_version_min_max(struct connectdata *conn, int sockindex,
 }
 
 static CURLcode
-libnx_connect_step1(struct connectdata *conn,
+libnx_connect_step1(struct Curl_easy *data, struct connectdata *conn,
                    int sockindex, bool nonblocking)
 {
-  struct Curl_easy *data = conn->data;
   struct ssl_connect_data* connssl = &conn->ssl[sockindex];
   curl_socket_t sockfd = conn->sock[sockindex];
   const char * const ssl_cafile = SSL_CONN_CONFIG(CAfile);
   const bool verifypeer = SSL_CONN_CONFIG(verifypeer);
   const char * const ssl_capath = SSL_CONN_CONFIG(CApath);
-  char * const ssl_cert = SSL_SET_OPTION(cert);
+  char * const ssl_cert = SSL_SET_OPTION(primary.clientcert);
   char * const key_passwd = SSL_SET_OPTION(key_passwd);
   const char * const ssl_crlfile = SSL_SET_OPTION(CRLfile);
   const char * const hostname = SSL_IS_PROXY() ? conn->http_proxy.host.name :
@@ -286,7 +284,7 @@ libnx_connect_step1(struct connectdata *conn,
   case CURL_SSLVERSION_TLSv1_2:
   case CURL_SSLVERSION_TLSv1_3:
     {
-      CURLcode result = set_ssl_version_min_max(conn, sockindex, &ssl_version);
+      CURLcode result = set_ssl_version_min_max(data, conn, sockindex, &ssl_version);
       if(result != CURLE_OK)
         return result;
       break;
@@ -486,16 +484,15 @@ libnx_connect_step1(struct connectdata *conn,
 }
 
 static CURLcode
-libnx_connect_step2(struct connectdata *conn,
+libnx_connect_step2(struct Curl_easy *data, struct connectdata *conn,
                    int sockindex)
 {
   Result rc = 0;
   CURLcode retcode = CURLE_OK;
-  struct Curl_easy *data = conn->data;
   struct ssl_connect_data* connssl = &conn->ssl[sockindex];
   const char * const pinnedpubkey = SSL_IS_PROXY() ?
         data->set.str[STRING_SSL_PINNEDPUBLICKEY_PROXY] :
-        data->set.str[STRING_SSL_PINNEDPUBLICKEY_ORIG];
+        data->set.str[STRING_SSL_PINNEDPUBLICKEY];
   const size_t bufsize = 16384;
   u8 *buffer = calloc(1, bufsize);
   u8 *peercert = NULL;
@@ -572,7 +569,7 @@ libnx_connect_step2(struct connectdata *conn,
     failf(data, "Unable to dump certificate information.\n");
 
   if(pinnedpubkey) {
-    curl_X509certificate cert;
+    struct Curl_X509certificate cert;
 
     if(!peercert || !peercert_size) {
       const char *errorptr = "";
@@ -715,14 +712,14 @@ static int Curl_libnx_check_cxn(struct connectdata *conn)
 }
 
 static CURLcode
-libnx_connect_common(struct connectdata *conn,
+libnx_connect_common(struct Curl_easy *data,
+                    struct connectdata *conn,
                     int sockindex,
                     bool nonblocking,
                     bool *done)
 {
   Result rc = 0;
   CURLcode retcode = CURLE_OK;
-  struct Curl_easy *data = conn->data;
   struct ssl_connect_data *connssl = &conn->ssl[sockindex];
   timediff_t timeout_ms;
   int what;
@@ -744,7 +741,7 @@ libnx_connect_common(struct connectdata *conn,
       failf(data, "SSL connection timeout");
       return CURLE_OPERATION_TIMEDOUT;
     }
-    retcode = libnx_connect_step1(conn, sockindex, nonblocking);
+    retcode = libnx_connect_step1(data, conn, sockindex, nonblocking);
   }
 
   if(!retcode && ssl_connect_2 == connssl->connecting_state) {
@@ -756,7 +753,7 @@ libnx_connect_common(struct connectdata *conn,
       failf(data, "SSL connection timeout");
       return CURLE_OPERATION_TIMEDOUT;
     }
-    retcode = libnx_connect_step2(conn, sockindex);
+    retcode = libnx_connect_step2(data, conn, sockindex);
   }
 
   if(!retcode) {
@@ -792,19 +789,20 @@ libnx_connect_common(struct connectdata *conn,
   return retcode;
 }
 
-static CURLcode Curl_libnx_connect_nonblocking(struct connectdata *conn,
+static CURLcode Curl_libnx_connect_nonblocking(struct Curl_easy *data,
+                                                 struct connectdata *conn,
                                                  int sockindex, bool *done)
 {
-  return libnx_connect_common(conn, sockindex, TRUE, done);
+  return libnx_connect_common(data, conn, sockindex, TRUE, done);
 }
 
 
-static CURLcode Curl_libnx_connect(struct connectdata *conn, int sockindex)
+static CURLcode Curl_libnx_connect(struct Curl_easy *data, struct connectdata *conn, int sockindex)
 {
   CURLcode retcode;
   bool done = FALSE;
 
-  retcode = libnx_connect_common(conn, sockindex, FALSE, &done);
+  retcode = libnx_connect_common(data, conn, sockindex, FALSE, &done);
   if(retcode)
     return retcode;
 
@@ -889,7 +887,6 @@ const struct Curl_ssl Curl_ssl_libnx = {
   Curl_none_set_engine_default,     /* set_engine_default */
   Curl_none_engines_list,           /* engines_list */
   Curl_none_false_start,            /* false_start */
-  Curl_none_md5sum,                 /* md5sum */
   Curl_libnx_sha256sum              /* sha256sum */
 };
 

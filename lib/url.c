@@ -2524,7 +2524,7 @@ static CURLcode create_conn_helper_init_proxy(struct Curl_easy *data,
   CURLcode result = CURLE_OK;
 
   if(!data->set.str[STRING_PROXY]) {
-    result = Curl_os_get_system_proxy(conn);
+    result = Curl_os_get_system_proxy(data, conn);
     if(result)
       goto out;
   }
